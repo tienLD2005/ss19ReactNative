@@ -1,8 +1,9 @@
-import { getAllArticles } from "@/apis/articles.api";
-import { getAllCategories } from "@/apis/categories.api";
+import { getArticles } from "@/apis/articles.api";
+import { getArticlesCategory } from "@/apis/articlesCategory.api";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -16,32 +17,48 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type FeaturedPost = {
-  id: string;
+// Types cho dữ liệu từ API
+type Article = {
+  id: string | number;
   title: string;
-  author: string;
-  image: string;
+  content?: string;
+  thumbnail?: string;
+  user?: {
+    id: number;
+    fullName: string;
+    avatar?: string;
+  };
+  createdAt?: string;
+  likesCount?: number;
 };
 
 type Category = {
-  id: string;
+  id: string | number;
   name: string;
   icon?: string;
 };
 
-type LatestPost = {
-  id: string;
-  title: string;
-  author: string;
-  authorAvatar: string;
-  image: string;
-  date: string;
-};
 const { width: screenWidth } = Dimensions.get("window");
 
+// Các icon mặc định cho danh mục
+const DEFAULT_CATEGORY_ICONS: any = {
+  "React Native": "logo-react",
+  "UI/UX": "color-palette-outline",
+  "JavaScript": "logo-javascript",
+  "Performance": "flash-outline",
+  "TypeScript": "logo-javascript",
+  "Backend": "server-outline",
+  "Frontend": "desktop-outline",
+};
+
 // Carousel cho các bài viết nổi bật
-const FeaturedCarousel = ({ posts }: { posts: FeaturedPost[] }) => {
+const FeaturedCarousel = ({ posts }: { posts: Article[] }) => {
   const router = useRouter();
+
+  if (!posts || posts.length === 0) {
+    return null;
+  }
+
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Nổi bật</Text>
@@ -51,19 +68,25 @@ const FeaturedCarousel = ({ posts }: { posts: FeaturedPost[] }) => {
         showsHorizontalScrollIndicator={false}
         style={styles.carouselContainer}
       >
-        {posts.map((post) => (
+        {posts.slice(0, 5).map((post) => (
           <TouchableOpacity
             key={post.id}
             onPress={() => router.push(`/posts/${post.id}`)}
           >
             <ImageBackground
-              source={{ uri: post.image }}
+              source={{
+                uri: post.thumbnail || "https://via.placeholder.com/400x200?text=No+Image"
+              }}
               style={styles.featuredCard}
               imageStyle={{ borderRadius: 15 }}
             >
               <View style={styles.featuredOverlay}>
-                <Text style={styles.featuredTitle}>{post.title}</Text>
-                <Text style={styles.featuredAuthor}>bởi {post.author}</Text>
+                <Text style={styles.featuredTitle} numberOfLines={2}>
+                  {post.title}
+                </Text>
+                <Text style={styles.featuredAuthor}>
+                  bởi {post.user?.fullName || "Ẩn danh"}
+                </Text>
               </View>
             </ImageBackground>
           </TouchableOpacity>
@@ -74,23 +97,44 @@ const FeaturedCarousel = ({ posts }: { posts: FeaturedPost[] }) => {
 };
 
 // Danh sách ngang cho các danh mục
-const CategoryList = ({ categories }: { categories: Category[] }) => (
-  <View style={styles.section}>
-    <Text style={styles.sectionTitle}>Danh mục</Text>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      {categories.map((category) => (
-        <TouchableOpacity key={category.id} style={styles.categoryCard}>
-          <Ionicons name={(category.icon || "folder-outline") as any} size={24} color="#007AFF" />
-          <Text style={styles.categoryText}>{category.name}</Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
-  </View>
-);
+const CategoryList = ({ categories }: { categories: Category[] }) => {
+  if (!categories || categories.length === 0) {
+    return null;
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Danh mục</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {categories.map((category) => {
+          const iconName = category.icon || DEFAULT_CATEGORY_ICONS[category.name] || "bookmark-outline";
+          return (
+            <TouchableOpacity key={category.id} style={styles.categoryCard}>
+              <Ionicons name={iconName as any} size={24} color="#007AFF" />
+              <Text style={styles.categoryText}>{category.name}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+};
 
 // Danh sách dọc cho các bài viết mới nhất
-const LatestPosts = ({ posts }: { posts: LatestPost[] }) => {
+const LatestPosts = ({ posts }: { posts: Article[] }) => {
   const router = useRouter();
+
+  if (!posts || posts.length === 0) {
+    return null;
+  }
+
+  // Format date
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Mới nhất</Text>
@@ -100,18 +144,29 @@ const LatestPosts = ({ posts }: { posts: LatestPost[] }) => {
           style={styles.latestPostItem}
           onPress={() => router.push(`/posts/${post.id}`)}
         >
-          <Image source={{ uri: post.image }} style={styles.latestPostImage} />
+          <Image
+            source={{
+              uri: post.thumbnail || "https://via.placeholder.com/100?text=No+Image"
+            }}
+            style={styles.latestPostImage}
+          />
           <View style={styles.latestPostContent}>
             <Text style={styles.latestPostTitle} numberOfLines={2}>
               {post.title}
             </Text>
             <View style={styles.latestPostMeta}>
               <Image
-                source={{ uri: post.authorAvatar }}
+                source={{
+                  uri: post.user?.avatar || "https://via.placeholder.com/40?text=User"
+                }}
                 style={styles.latestPostAvatar}
               />
-              <Text style={styles.latestPostAuthor}>{post.author}</Text>
-              <Text style={styles.latestPostDate}>• {post.date}</Text>
+              <Text style={styles.latestPostAuthor}>
+                {post.user?.fullName || "Ẩn danh"}
+              </Text>
+              <Text style={styles.latestPostDate}>
+                • {formatDate(post.createdAt)}
+              </Text>
             </View>
           </View>
         </TouchableOpacity>
@@ -123,56 +178,65 @@ const LatestPosts = ({ posts }: { posts: LatestPost[] }) => {
 // --- MÀN HÌNH CHÍNH ---
 
 export default function HomeScreen() {
-  const [articles, setArticles] = useState<any[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Gọi API để lấy danh sách bài viết
+  const {
+    data: rawArticles,
+    isLoading: articlesLoading,
+    isError: articlesError,
+    error: articlesErrorObj,
+  } = useQuery({
+    queryKey: ["articles"],
+    queryFn: getArticles,
+  });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [articlesResponse, categoriesResponse] = await Promise.all([
-          getAllArticles(),
-          getAllCategories()
-        ]);
+  // Gọi API để lấy danh sách danh mục
+  const {
+    data: rawCategories,
+    isLoading: categoriesLoading,
+  } = useQuery({
+    queryKey: ["articlesCategory"],
+    queryFn: getArticlesCategory,
+  });
 
-        setArticles(articlesResponse.data || []);
-        setCategories(categoriesResponse.data || []);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Chuẩn hoá dữ liệu articles thành mảng
+  const articles = React.useMemo(() => {
+    if (!rawArticles) return [];
+    if (Array.isArray(rawArticles)) return rawArticles;
+    if (Array.isArray(rawArticles.data)) return rawArticles.data;
+    if (Array.isArray(rawArticles.items)) return rawArticles.items;
+    return [];
+  }, [rawArticles]);
 
-    fetchData();
-  }, []);
+  // Chuẩn hoá dữ liệu categories thành mảng
+  const categories = React.useMemo(() => {
+    if (!rawCategories) return [];
+    if (Array.isArray(rawCategories)) return rawCategories;
+    if (Array.isArray(rawCategories.data)) return rawCategories.data;
+    if (Array.isArray(rawCategories.items)) return rawCategories.items;
+    return [];
+  }, [rawCategories]);
 
-  // Transform articles data for different sections
-  const featuredPosts: FeaturedPost[] = articles.slice(0, 3).map(article => ({
-    id: String(article.id), // Convert number to string for navigation
-    title: article.title,
-    author: article.author?.name || 'Unknown Author',
-    image: article.image || 'https://via.placeholder.com/300x200'
-  }));
-
-  const latestPosts: LatestPost[] = articles.slice(3, 8).map(article => ({
-    id: String(article.id), // Convert number to string for navigation
-    title: article.title,
-    author: article.author?.name || 'Unknown Author',
-    authorAvatar: article.author?.avatar || 'https://i.pravatar.cc/150?u=default',
-    image: article.image || 'https://via.placeholder.com/300x200',
-    date: new Date(article.createdAt).toLocaleDateString('vi-VN')
-  }));
-
-  if (loading) {
+  // Loading state
+  if (articlesLoading || categoriesLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, styles.centerContent]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Đang tải...</Text>
-        </View>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Đang tải dữ liệu...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  // Error state
+  if (articlesError) {
+    return (
+      <SafeAreaView style={[styles.container, styles.centerContent]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Ionicons name="alert-circle-outline" size={64} color="#e53e3e" />
+        <Text style={styles.errorTitle}>Không thể tải dữ liệu</Text>
+        <Text style={styles.errorMessage}>
+          {String((articlesErrorObj as any)?.message || articlesErrorObj)}
+        </Text>
       </SafeAreaView>
     );
   }
@@ -187,9 +251,9 @@ export default function HomeScreen() {
             <Ionicons name="search-outline" size={26} color="#333" />
           </TouchableOpacity>
         </View>
-        <FeaturedCarousel posts={featuredPosts} />
+        <FeaturedCarousel posts={articles} />
         <CategoryList categories={categories} />
-        <LatestPosts posts={latestPosts} />
+        <LatestPosts posts={articles.slice(5, 10)} />
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -199,6 +263,11 @@ export default function HomeScreen() {
 // --- STYLESHEET ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "white" },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -210,6 +279,26 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 28, fontWeight: "bold" },
   section: { marginTop: 20, paddingLeft: 20 },
   sectionTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15 },
+
+  // Loading & Error States
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: "#666"
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginTop: 15,
+    textAlign: "center",
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 10,
+    textAlign: "center",
+  },
 
   // Featured Carousel
   carouselContainer: { paddingRight: 20 },
@@ -253,16 +342,4 @@ const styles = StyleSheet.create({
   latestPostAvatar: { width: 20, height: 20, borderRadius: 10 },
   latestPostAuthor: { marginLeft: 8, fontSize: 12, color: "gray" },
   latestPostDate: { marginLeft: 8, fontSize: 12, color: "gray" },
-
-  // Loading styles
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#666",
-  },
 });
