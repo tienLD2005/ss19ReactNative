@@ -1,7 +1,9 @@
+import { createComment, getArticleById, toggleLike } from "@/apis/articles.api";
 import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
-  Alert,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,7 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -118,12 +120,35 @@ const Comment = ({
 
 // --- MÀN HÌNH CHÍNH (ĐÃ CẬP NHẬT) ---
 export default function PostDetailScreen() {
+  const params = useLocalSearchParams();
+  const router = useRouter();
+  // cố gắng lấy id từ params
+  const postId = (params as any)?.id ?? "1";
   // State để lưu thông tin bình luận đang được trả lời
   const [replyingTo, setReplyingTo] = useState<CommentType | null>(null);
   // State để lưu nội dung đang gõ
   const [commentText, setCommentText] = useState("");
   // Ref để focus vào TextInput
   const inputRef = useRef<TextInput>(null);
+
+  const { data: detail, isLoading } = useQuery({
+    queryKey: ["article", postId],
+    queryFn: () => getArticleById(postId),
+  });
+
+  const likeMutation = useMutation({
+    mutationFn: (payload: any) => toggleLike(payload),
+    onSuccess: () => {
+      // refetch detail
+    },
+  });
+
+  const commentMutation = useMutation({
+    mutationFn: (payload: any) => createComment(postId, payload),
+    onSuccess: () => {
+      // refetch detail or comments
+    },
+  });
 
   // Hàm được gọi khi nhấn nút "Reply" ở một bình luận
   const handleReplyPress = (comment: CommentType) => {
@@ -135,18 +160,12 @@ export default function PostDetailScreen() {
   const handleCommentSubmit = () => {
     if (!commentText.trim()) return;
 
-    if (replyingTo) {
-      // Logic gửi trả lời
-      Alert.alert(
-        "Gửi trả lời",
-        `Nội dung: "${commentText}"\nTrả lời cho bình luận ID: ${replyingTo.id} của ${replyingTo.user.name}`
-      );
-    } else {
-      // Logic gửi bình luận mới
-      Alert.alert("Gửi bình luận mới", `Nội dung: "${commentText}"`);
-    }
+    // gửi comment thông qua API
+    const payload: any = { text: commentText };
+    if (replyingTo) payload.replyTo = replyingTo.id;
+    commentMutation.mutate(payload);
 
-    // Reset state sau khi gửi
+    // Reset state local (UI optimistic)
     setCommentText("");
     setReplyingTo(null);
     Keyboard.dismiss();

@@ -1,7 +1,10 @@
+import { getAllArticles } from "@/apis/articles.api";
+import { getAllCategories } from "@/apis/categories.api";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   Image,
   ImageBackground,
@@ -21,8 +24,9 @@ type FeaturedPost = {
 };
 
 type Category = {
+  id: string;
   name: string;
-  icon: string;
+  icon?: string;
 };
 
 type LatestPost = {
@@ -33,60 +37,6 @@ type LatestPost = {
   image: string;
   date: string;
 };
-
-// --- DỮ LIỆU FIX CỨNG ---
-const FEATURED_POSTS: FeaturedPost[] = [
-  {
-    id: "1",
-    title: "10 Mẹo hay để tối ưu hiệu năng React Native",
-    author: "Ngọ Văn Quý",
-    image:
-      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ1z3WO2y5h7YkHljxIsvwuOxP21OE_8tnedA&s",
-  },
-  {
-    id: "2",
-    title: "Xây dựng UI/UX đẹp mắt với Expo Router",
-    author: "Ngọ Văn Quý",
-    image:
-      "https://hoanghamobile.com/tin-tuc/wp-content/uploads/2024/10/tai-anh-phong-canh-dep-thump.jpg",
-  },
-  {
-    id: "3",
-    title: "Quản lý State hiệu quả trong ứng dụng lớn",
-    author: "Ngọ Văn Quý",
-    image:
-      "https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?q=80&w=2070&auto=format&fit=crop",
-  },
-];
-
-const CATEGORIES: Category[] = [
-  { name: "React Native", icon: "logo-react" },
-  { name: "UI/UX", icon: "color-palette-outline" },
-  { name: "JavaScript", icon: "logo-javascript" },
-  { name: "Performance", icon: "flash-outline" },
-];
-
-const LATEST_POSTS: LatestPost[] = [
-  {
-    id: "4",
-    title: "So sánh Redux Toolkit và TanStack Query",
-    author: "Ngọ Văn Quý",
-    authorAvatar: "https://i.pravatar.cc/150?u=a1",
-    image:
-      "https://images.unsplash.com/photo-1633356122544-f134324a6cee?q=80&w=2070&auto=format&fit=crop",
-    date: "15 Th10, 2025",
-  },
-  {
-    id: "5",
-    title: "Kỹ thuật lazy loading trong React Native",
-    author: "Ngọ Văn Quý",
-    authorAvatar: "https://i.pravatar.cc/150?u=a2",
-    image:
-      "https://images.unsplash.com/photo-1542831371-29b0f74f9713?q=80&w=2070&auto=format&fit=crop",
-    date: "14 Th10, 2025",
-  },
-];
-
 const { width: screenWidth } = Dimensions.get("window");
 
 // Carousel cho các bài viết nổi bật
@@ -129,8 +79,8 @@ const CategoryList = ({ categories }: { categories: Category[] }) => (
     <Text style={styles.sectionTitle}>Danh mục</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
       {categories.map((category) => (
-        <TouchableOpacity key={category.name} style={styles.categoryCard}>
-          <Ionicons name={category.icon as any} size={24} color="#007AFF" />
+        <TouchableOpacity key={category.id} style={styles.categoryCard}>
+          <Ionicons name={(category.icon || "folder-outline") as any} size={24} color="#007AFF" />
           <Text style={styles.categoryText}>{category.name}</Text>
         </TouchableOpacity>
       ))}
@@ -170,9 +120,63 @@ const LatestPosts = ({ posts }: { posts: LatestPost[] }) => {
   );
 };
 
-// --- MÀN HÌNH CHÍNH ---z
+// --- MÀN HÌNH CHÍNH ---
 
 export default function HomeScreen() {
+  const [articles, setArticles] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const [articlesResponse, categoriesResponse] = await Promise.all([
+          getAllArticles(),
+          getAllCategories()
+        ]);
+
+        setArticles(articlesResponse.data || []);
+        setCategories(categoriesResponse.data || []);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Transform articles data for different sections
+  const featuredPosts: FeaturedPost[] = articles.slice(0, 3).map(article => ({
+    id: String(article.id), // Convert number to string for navigation
+    title: article.title,
+    author: article.author?.name || 'Unknown Author',
+    image: article.image || 'https://via.placeholder.com/300x200'
+  }));
+
+  const latestPosts: LatestPost[] = articles.slice(3, 8).map(article => ({
+    id: String(article.id), // Convert number to string for navigation
+    title: article.title,
+    author: article.author?.name || 'Unknown Author',
+    authorAvatar: article.author?.avatar || 'https://i.pravatar.cc/150?u=default',
+    image: article.image || 'https://via.placeholder.com/300x200',
+    date: new Date(article.createdAt).toLocaleDateString('vi-VN')
+  }));
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Đang tải...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -183,9 +187,9 @@ export default function HomeScreen() {
             <Ionicons name="search-outline" size={26} color="#333" />
           </TouchableOpacity>
         </View>
-        <FeaturedCarousel posts={FEATURED_POSTS} />
-        <CategoryList categories={CATEGORIES} />
-        <LatestPosts posts={LATEST_POSTS} />
+        <FeaturedCarousel posts={featuredPosts} />
+        <CategoryList categories={categories} />
+        <LatestPosts posts={latestPosts} />
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -249,4 +253,16 @@ const styles = StyleSheet.create({
   latestPostAvatar: { width: 20, height: 20, borderRadius: 10 },
   latestPostAuthor: { marginLeft: 8, fontSize: 12, color: "gray" },
   latestPostDate: { marginLeft: 8, fontSize: 12, color: "gray" },
+
+  // Loading styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#666",
+  },
 });

@@ -1,7 +1,10 @@
+import { deleteArticle, getArticlesMe } from "@/apis/articles.api";
 import { Ionicons } from "@expo/vector-icons";
-import { router, Stack, useRouter } from "expo-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Stack, useRouter } from "expo-router";
 import React from "react";
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Image,
@@ -12,22 +15,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const MY_POSTS: Post[] = [
-  {
-    id: "1",
-    title: "10 Mẹo hay để tối ưu hiệu năng React Native",
-    status: "published",
-    image: "https://images.viblo.asia/0f642be7-fd85-4522-a773-33ba769faa16.png",
-  },
-  {
-    id: "p2",
-    title: "Hướng dẫn xây dựng UI/UX đẹp mắt với Expo Router",
-    status: "draft",
-    image:
-      "https://cdn.prod.website-files.com/687e8dc61ba884e5a78c6f60/689da954b61200eca29e687e_UI-va-UX.jpeg",
-  },
-];
-
 type Post = {
   id: string;
   title: string;
@@ -35,63 +22,116 @@ type Post = {
   image: string;
 };
 
-const PostRow = ({ item }: { item: Post }) => (
-  <View style={styles.postRow}>
-    <Image source={{ uri: item.image }} style={styles.postImage} />
-    <View style={styles.postInfo}>
-      <Text style={styles.postTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
-      <View
-        style={[
-          styles.statusBadge,
-          {
-            backgroundColor:
-              item.status === "published" ? "#4ade80" : "#facc15",
-          },
-        ]}
-      >
-        <Text style={styles.statusText}>
-          {item.status === "published" ? "Đã xuất bản" : "Bản nháp"}
+const PostRow = ({ item, onDelete }: { item: Post; onDelete: (id: string) => void }) => {
+  const router = useRouter();
+  return (
+    <View style={styles.postRow}>
+      <Image source={{ uri: item.image }} style={styles.postImage} />
+      <View style={styles.postInfo}>
+        <Text style={styles.postTitle} numberOfLines={2}>
+          {item.title}
         </Text>
+        <View
+          style={[
+            styles.statusBadge,
+            {
+              backgroundColor:
+                item.status === "published" ? "#4ade80" : "#facc15",
+            },
+          ]}
+        >
+          <Text style={styles.statusText}>
+            {item.status === "published" ? "Đã xuất bản" : "Bản nháp"}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.actions}>
+        <TouchableOpacity
+          onPress={() => router.push(`/profile/edit-post?postId=${item.id}`)}
+        >
+          <Ionicons name="pencil-outline" size={22} color="#3b82f6" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() =>
+            Alert.alert("Xóa", `Bạn có chắc muốn xóa: ${item.title}`, [
+              { text: "Hủy", style: "cancel" },
+              { text: "Xóa", style: "destructive", onPress: () => onDelete(item.id) },
+            ])
+          }
+        >
+          <Ionicons name="trash-outline" size={22} color="#ef4444" />
+        </TouchableOpacity>
       </View>
     </View>
-    <View style={styles.actions}>
-      <TouchableOpacity
-        onPress={() => router.push(`/profile/edit-post?postId=${item.id}`)}
-      >
-        <Ionicons name="pencil-outline" size={22} color="#3b82f6" />
-      </TouchableOpacity>
-      <TouchableOpacity
-        onPress={() =>
-          Alert.alert("Xóa", `Bạn có chắc muốn xóa: ${item.title}`)
-        }
-      >
-        <Ionicons name="trash-outline" size={22} color="#ef4444" />
-      </TouchableOpacity>
-    </View>
-  </View>
-);
+  );
+};
 
 export default function MyPostsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["my-posts"],
+    queryFn: getArticlesMe,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteArticle(id),
+    onSuccess: () => {
+      // refetch list
+      queryClient.invalidateQueries({ queryKey: ["my-posts"] });
+    },
+    onError: (err: any) => {
+      Alert.alert("Lỗi", String(err?.message ?? err));
+    },
+  });
+
+  const handleDelete = (id: string) => {
+    deleteMutation.mutate(id);
+  };
+
+  // chuẩn hoá sang mảng để FlatList dùng
+  const posts = React.useMemo(() => {
+    if (!data) return [];
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data.data)) return data.data;
+    if (Array.isArray(data.items)) return data.items;
+    return [];
+  }, [data]);
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        <Text>Error fetching articles</Text>
+        <Text>{String((error as any)?.message ?? error)}</Text>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen
         options={{
           headerRight: () => (
-            <TouchableOpacity
-              onPress={() => router.push("/profile/create-post")}
-            >
+            <TouchableOpacity onPress={() => router.push("/profile/create-post")}>
               <Ionicons name="add-circle" size={32} color="#22c55e" />
             </TouchableOpacity>
           ),
         }}
       />
       <FlatList<Post>
-        data={MY_POSTS}
-        renderItem={({ item }: { item: Post }) => <PostRow item={item} />}
-        keyExtractor={(item) => item.id}
+        data={posts}
+        renderItem={({ item }: { item: Post }) => (
+          <PostRow item={item} onDelete={handleDelete} />
+        )}
+        keyExtractor={(item) => String(item.id)}
         ListEmptyComponent={
           <Text style={styles.emptyText}>Bạn chưa có bài viết nào.</Text>
         }

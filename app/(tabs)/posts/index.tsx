@@ -1,7 +1,11 @@
+import { getArticles } from "@/apis/articles.api";
+import { getArticlesCategory } from "@/apis/articlesCategory.api";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -10,27 +14,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-const POSTS = [
-  {
-    id: "1",
-    title: "10 Mẹo hay để tối ưu hiệu năng ứng dụng React Native",
-    author: "Nguyễn Văn A",
-    authorAvatar: "https://i.pravatar.cc/150?u=a1",
-    image:
-      "https://beitech.net/wp-content/uploads/2021/06/react-native-dung-de-lap-trinh-app1_opt.png",
-    likes: 1250,
-  },
-  {
-    id: "2",
-    title: "Hướng dẫn xây dựng UI/UX đẹp mắt với Expo Router",
-    author: "Lê Văn B",
-    authorAvatar: "https://i.pravatar.cc/150?u=a2",
-    image:
-      "https://cdn.prod.website-files.com/687e8dc61ba884e5a78c6f60/689da954b61200eca29e687e_UI-va-UX.jpeg",
-    likes: 890,
-  },
-];
 
 type Post = {
   id: string;
@@ -72,13 +55,68 @@ const PostCard: React.FC<PostCardProps> = ({ item }) => {
 };
 
 export default function PostsScreen() {
+  const {
+    data: rawArticles,
+    isLoading: articlesLoading,
+    isError: articlesError,
+    error: articlesErrorObj,
+  } = useQuery({
+    queryKey: ["articles"],
+    queryFn: getArticles,
+  });
+
+  // chuẩn hoá articles thành mảng
+  const articles = React.useMemo(() => {
+    if (!rawArticles) return [];
+    if (Array.isArray(rawArticles)) return rawArticles;
+    if (Array.isArray(rawArticles.data)) return rawArticles.data;
+    if (Array.isArray(rawArticles.items)) return rawArticles.items;
+    return [];
+  }, [rawArticles]);
+
+  const categoryArticles = useQuery({
+    queryKey: ["articlesCategory"],
+    queryFn: getArticlesCategory,
+  });
+
+  const categories = React.useMemo(() => {
+    const d = categoryArticles.data;
+    if (!d) return [];
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d.data)) return d.data;
+    if (Array.isArray(d.items)) return d.items;
+    return [];
+  }, [categoryArticles.data]);
+
+  if (articlesLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (articlesError) {
+    return (
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        <Text>Error fetching articles</Text>
+        <Text>{String((articlesErrorObj as any)?.message ?? articlesErrorObj)}</Text>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
-        data={POSTS}
+        data={articles}
         renderItem={({ item }) => <PostCard item={item} />}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         contentContainerStyle={{ padding: 10 }}
+        ListEmptyComponent={
+          <View style={{ padding: 20, alignItems: "center" }}>
+            <Text>Không có bài viết</Text>
+          </View>
+        }
       />
     </SafeAreaView>
   );

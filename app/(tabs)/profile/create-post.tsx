@@ -1,8 +1,12 @@
+import { createArticle } from "@/apis/articles.api";
 import { Ionicons } from "@expo/vector-icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { Stack, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +19,52 @@ export default function CreatePostScreen() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: (payload: any) => createArticle(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-posts"] });
+      router.back();
+    },
+    onError: (err: any) => {
+      Alert.alert("Lỗi", String(err?.message ?? err));
+    },
+  });
+
+  const pickImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Quyền bị từ chối", "Cần quyền truy cập ảnh để chọn ảnh bìa");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      // SDK >= 49 returns result.assets
+      // @ts-ignore
+      const uri = result.assets ? result.assets[0].uri : result.uri;
+      setImageUri(uri);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!title.trim()) return Alert.alert("Lỗi", "Tiêu đề rỗng");
+    if (imageUri) {
+      const form = new FormData();
+      form.append("title", title);
+      form.append("content", content);
+      // @ts-ignore React Native FormData file
+      form.append("cover", { uri: imageUri, name: `photo.jpg`, type: `image/jpeg` });
+      createMutation.mutate(form);
+    } else {
+      createMutation.mutate({ title, content });
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -26,21 +76,22 @@ export default function CreatePostScreen() {
             </TouchableOpacity>
           ),
           headerRight: () => (
-            <TouchableOpacity
-              style={styles.publishButton}
-              onPress={() =>
-                Alert.alert("Đăng bài", "Bài viết của bạn đã được đăng.")
-              }
-            >
+            <TouchableOpacity style={styles.publishButton} onPress={handleSubmit}>
               <Text style={styles.publishButtonText}>Đăng bài</Text>
             </TouchableOpacity>
           ),
         }}
       />
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <TouchableOpacity style={styles.imagePicker}>
-          <Ionicons name="camera-outline" size={40} color="#ccc" />
-          <Text style={styles.imagePickerText}>Thêm ảnh bìa</Text>
+        <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={{ width: "100%", height: "100%" }} />
+          ) : (
+            <>
+              <Ionicons name="camera-outline" size={40} color="#ccc" />
+              <Text style={styles.imagePickerText}>Thêm ảnh bìa</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         <TextInput
@@ -87,6 +138,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#eee",
     borderStyle: "dashed",
+    overflow: "hidden",
   },
   imagePickerText: {
     marginTop: 10,

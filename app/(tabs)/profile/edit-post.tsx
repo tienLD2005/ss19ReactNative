@@ -1,5 +1,8 @@
+import { getArticleById, updateArticle } from "@/apis/articles.api";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Alert,
@@ -12,20 +15,69 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Dữ liệu giả cho bài viết đang chỉnh sửa
+// fallback data while loading
 const EXISTING_POST = {
-  title: "10 Mẹo hay để tối ưu hiệu năng React Native",
-  content:
-    "Nội dung chi tiết của bài viết... Lập trình React Native đòi hỏi sự chú ý đến từng chi tiết nhỏ để đảm bảo ứng dụng không chỉ hoạt động đúng mà còn mượt mà.",
-  image:
-    "https://images.unsplash.com/photo-1607703703520-bb2a8e3523f4?q=80&w=2070&auto=format&fit=crop",
+  title: "",
+  content: "",
+  image: "",
 };
 
 export default function EditPostScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const id = (params as any)?.postId ?? (params as any)?.id ?? "";
+
+  const { data: articleData, isLoading } = useQuery({
+    queryKey: ["article", id],
+    enabled: !!id,
+    queryFn: () => getArticleById(id),
+  });
+
   // State được khởi tạo với dữ liệu có sẵn
   const [title, setTitle] = useState(EXISTING_POST.title);
   const [content, setContent] = useState(EXISTING_POST.content);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: any) => updateArticle(payload.id, payload.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-posts"] });
+      router.back();
+    },
+    onError: (err: any) => {
+      Alert.alert("Lỗi", String(err?.message ?? err));
+    },
+  });
+
+  // Khi articleData có giá trị load về thì populate state
+  React.useEffect(() => {
+    if (articleData) {
+      // có thể API trả { data: {...} }
+      const payload = articleData.data ?? articleData;
+      setTitle(payload.title ?? "");
+      setContent(payload.content ?? "");
+      setImageUri(payload.coverUrl ?? payload.image ?? null);
+    }
+  }, [articleData]);
+
+  const pickImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Quyền bị từ chối", "Cần quyền truy cập ảnh để chọn ảnh bìa");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      // @ts-ignore
+      const uri = result.assets ? result.assets[0].uri : result.uri;
+      setImageUri(uri);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -39,9 +91,20 @@ export default function EditPostScreen() {
           headerRight: () => (
             <TouchableOpacity
               style={styles.publishButton}
-              onPress={() =>
-                Alert.alert("Cập nhật", "Bài viết của bạn đã được cập nhật.")
-              }
+              onPress={() => {
+                if (!title.trim()) return Alert.alert("Lỗi", "Tiêu đề rỗng");
+                if (!id) return Alert.alert("Lỗi", "Không có id bài viết");
+                if (imageUri) {
+                  const form = new FormData();
+                  form.append("title", title);
+                  form.append("content", content);
+                  // @ts-ignore
+                  form.append("cover", { uri: imageUri, name: `photo.jpg`, type: `image/jpeg` });
+                  updateMutation.mutate({ id, data: form });
+                } else {
+                  updateMutation.mutate({ id, data: { title, content } });
+                }
+              }}
             >
               <Text style={styles.publishButtonText}>Cập nhật</Text>
             </TouchableOpacity>

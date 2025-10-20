@@ -1,7 +1,17 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import React from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-export default function RootLayout() {
-  // Layout gốc để quản lý các màn hình modal trong tương lai
-  return <Stack screenOptions={{ headerShown: false }} />;
+const queryClient = new QueryClient();
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+        {children}
+      </SafeAreaProvider>
+    </QueryClientProvider>
+  );
 }
